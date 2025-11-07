@@ -1,11 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-
-// 定义对话项类型
-export interface DialogueItem {
-  role: string
-  text: string
-}
+import type { DialogueItem } from './types/dialogue'
 
 // 定义单词类型
 interface VocabularyItem {

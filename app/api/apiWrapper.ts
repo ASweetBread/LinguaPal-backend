@@ -21,19 +21,49 @@ export function withApi(handler: ApiHandler, options?: { name?: string }) {
 
       const duration = Date.now() - start
 
-      // 如果 handler 已经返回 NextResponse 或原生 Response，直接返回
+      // helper: read/preview response body safely (with truncation)
+      const preview = async (resOrObj: any) => {
+        const MAX = 2000
+        try {
+          // If it's a Response-like, clone and read text
+          if (resOrObj instanceof Response) {
+            const clone = resOrObj.clone()
+            const txt = await clone.text()
+            // try parse JSON for nicer output
+            try {
+              const parsed = JSON.parse(txt)
+              const s = JSON.stringify(parsed)
+              return s.length > MAX ? s.slice(0, MAX) + '...(truncated)' : s
+            } catch {
+              return txt.length > MAX ? txt.slice(0, MAX) + '...(truncated)' : txt
+            }
+          }
+
+          // Otherwise try to stringify an object
+          const s = typeof resOrObj === 'string' ? resOrObj : JSON.stringify(resOrObj)
+          return s.length > MAX ? s.slice(0, MAX) + '...(truncated)' : s
+        } catch (e) {
+          return '[unreadable response body]'
+        }
+      }
+
+      // 如果 handler 已经返回 NextResponse 或原生 Response，尝试读取并打印 body，再返回
       if (result instanceof NextResponse || result instanceof Response) {
         // 尝试读取 status，如果没有则视为 200
         const status = (result as Response).status ?? 200
+        const bodyPreview = await preview(result)
         console.log(
-          `[${new Date().toISOString()}] [${name}] -> ${method} ${url} ${status} (${duration}ms)`
+          `[${new Date().toISOString()}] [${name}] -> ${method} ${url} ${status} (${duration}ms)`,
+          `responsePreview: ${bodyPreview}`
         )
         return result
       }
 
-      // 否则把返回值序列化为 JSON
+      // 否则把返回值序列化为 JSON 并打印预览
+      const bodyPreview = await preview(result)
       console.log(
-        `[${new Date().toISOString()}] [${name}] -> ${method} ${url} 200 (${duration}ms)`
+        `[${new Date().toISOString()}] [${name}] -> ${method} ${url} 200 (${duration}ms)`,
+        `responsePreview: ${bodyPreview}`
       )
       return NextResponse.json(result)
     } catch (error) {

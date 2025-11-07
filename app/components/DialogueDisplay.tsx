@@ -4,13 +4,9 @@ import { useAppStore } from '../store'
 
 export default function DialogueDisplay() {
   const { dialogue } = useAppStore()
-
   if (!dialogue || dialogue.length === 0) {
-    return (
-      <div className="w-full max-w-2xl mx-auto p-6 bg-gray-50 rounded-lg border border-gray-200 text-center">
-        <p className="text-gray-500">请输入场景并点击"生成对话"按钮</p>
-      </div>
-    )
+    // 当没有对话时，不渲染该组件（返回 null）
+    return null
   }
 
   // 解析对话内容，分离英文和中文部分
@@ -27,6 +23,7 @@ export default function DialogueDisplay() {
       <h2 className="text-xl font-semibold text-gray-900 mb-4">生成的对话</h2>
       <div className="space-y-6">
         {dialogue.map((item, index) => {
+          console.log('Rendering dialogue item:', item)
           const { english, chinese } = parseDialogueText(item.text)
           return (
             <div

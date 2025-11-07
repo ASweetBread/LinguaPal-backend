@@ -1,6 +1,7 @@
 'use client'
 import React, { useState } from 'react'
 import { useAppStore } from '../store'
+import clientFetch from '../lib/clientApi'
 
 export default function SceneInput() {
   const [scene, setScene] = useState('')
@@ -14,19 +15,17 @@ export default function SceneInput() {
 
     try {
       setIsLoading(true)
-      const response = await fetch('/api/generate-dialogue', {
+      const data = await clientFetch('/api/generate-dialogue', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ scene: scene.trim() }),
-      })
+        name: 'generate-dialogue-client',
+      } as any)
 
-      if (!response.ok) {
-        throw new Error('API调用失败')
-      }
-
-      const data = await response.json()
+      console.log('生成的对话:', data)
+      // 保持原有行为：data.dialogue
       setDialogue(data.dialogue)
     } catch (error) {
       console.error('生成对话时出错:', error)
