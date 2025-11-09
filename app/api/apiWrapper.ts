@@ -1,85 +1,81 @@
-import { NextResponse } from 'next/server'
-
-type ApiHandler = (request: Request) => Promise<Response | NextResponse | unknown>
-
+import { File } from 'node:buffer'
+// API请求封装
 /**
- * Wrap an API handler to provide consistent logging (before, after) and error handling.
- * 返回的函数与 Next.js App Router 的 `GET/POST` 等导出签名兼容。
+ * 封装的API请求函数，用于统一处理API调用过程
+ * @param url API请求URL
+ * @param options 请求选项
+ * @param apiName API名称标识，用于日志记录
+ * @returns 解析后的响应数据
  */
-export function withApi(handler: ApiHandler, options?: { name?: string }) {
-  const name = options?.name || 'api'
-
-  return async function (request: Request) {
-    const start = Date.now()
-    const method = request.method
-    const url = request.url
-
-    console.log(`[${new Date().toISOString()}] [${name}] <- ${method} ${url}`)
-
-    try {
-      const result = await handler(request)
-
-      const duration = Date.now() - start
-
-      // helper: read/preview response body safely (with truncation)
-      const preview = async (resOrObj: any) => {
-        const MAX = 2000
-        try {
-          // If it's a Response-like, clone and read text
-          if (resOrObj instanceof Response) {
-            const clone = resOrObj.clone()
-            const txt = await clone.text()
-            // try parse JSON for nicer output
-            try {
-              const parsed = JSON.parse(txt)
-              const s = JSON.stringify(parsed)
-              return s.length > MAX ? s.slice(0, MAX) + '...(truncated)' : s
-            } catch {
-              return txt.length > MAX ? txt.slice(0, MAX) + '...(truncated)' : txt
-            }
-          }
-
-          // Otherwise try to stringify an object
-          const s = typeof resOrObj === 'string' ? resOrObj : JSON.stringify(resOrObj)
-          return s.length > MAX ? s.slice(0, MAX) + '...(truncated)' : s
-        } catch (e) {
-          return '[unreadable response body]'
+export async function apiRequest<T>(
+  url: string,
+  options: RequestInit,
+  apiName: string = 'Unknown-API'
+): Promise<T> {
+  console.log(`[${apiName}] 请求开始: ${url}`)
+  
+  // 记录请求体预览（避免记录敏感信息）
+  if (options.body) {
+    if (typeof options.body === 'string') {
+      try {
+        const body = JSON.parse(options.body)
+        // 创建一个安全的预览对象，不包含敏感信息
+        const preview = { ...body }
+        // 移除可能的敏感字段
+        // if (preview.apiKey) preview.apiKey = '***'
+        // if (preview.password) preview.password = '***'
+        // if (preview.token) preview.token = '***'
+        console.log(`[${apiName}] 请求体预览:`, preview)
+      } catch (e) {
+        console.log(`[${apiName}] 请求体（非JSON字符串）`)
+      }
+    } else if (options.body instanceof FormData) {
+      // 处理FormData类型的请求体
+      const formData = options.body as FormData
+      const formDataPreview: Record<string, string> = {}
+      
+      // 使用forEach代替for...of循环，兼容ES5
+      formData.forEach((value, key) => {
+        if (value instanceof File) {
+          formDataPreview[key] = `[File: ${value.name}, ${value.size} bytes]`
+        } else {
+          formDataPreview[key] = String(value)
         }
-      }
-
-      // 如果 handler 已经返回 NextResponse 或原生 Response，尝试读取并打印 body，再返回
-      if (result instanceof NextResponse || result instanceof Response) {
-        // 尝试读取 status，如果没有则视为 200
-        const status = (result as Response).status ?? 200
-        const bodyPreview = await preview(result)
-        console.log(
-          `[${new Date().toISOString()}] [${name}] -> ${method} ${url} ${status} (${duration}ms)`,
-          `responsePreview: ${bodyPreview}`
-        )
-        return result
-      }
-
-      // 否则把返回值序列化为 JSON 并打印预览
-      const bodyPreview = await preview(result)
-      console.log(
-        `[${new Date().toISOString()}] [${name}] -> ${method} ${url} 200 (${duration}ms)`,
-        `responsePreview: ${bodyPreview}`
-      )
-      return NextResponse.json(result)
-    } catch (error) {
-      const duration = Date.now() - start
-      console.error(
-        `[${new Date().toISOString()}] [${name}] !!! ERROR ${method} ${url} (${duration}ms)`,
-        error
-      )
-
-      // 标准化错误响应
-      return NextResponse.json(
-        { error: '服务器内部错误' },
-        { status: 500 }
-      )
+      })
+      
+      console.log(`[${apiName}] FormData请求体预览:`, formDataPreview)
+    } else {
+      console.log(`[${apiName}] 请求体（非字符串，非FormData）`)
     }
   }
+  
+  const startTime = Date.now()
+  
+  try {
+    const response = await fetch(url, options)
+    const endTime = Date.now()
+    console.log(`[${apiName}] 请求完成: ${url}, 耗时: ${endTime - startTime}ms, 状态码: ${response.status}`)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(`API请求失败: ${response.status} ${response.statusText}, 详情: ${JSON.stringify(errorData)}`)
+    }
+    
+    // 检查响应内容类型，只在JSON时解析
+    const contentType = response.headers.get('content-type')
+    let data: any
+    if (contentType && contentType.includes('application/json')) {
+      data = await response.json()
+      console.log(`[${apiName}] 响应数据获取成功`, data)
+    } else {
+      // 对于非JSON响应，返回空对象或其他适当的默认值
+      console.log(`[${apiName}] 响应（非JSON格式）`)
+      data = {}
+    }
+    return data as T
+  } catch (error) {
+    const endTime = Date.now()
+    console.error(`[${apiName}] 请求失败: ${url}, 耗时: ${endTime - startTime}ms, 错误:`, error)
+    throw error
+  }
 }
-
-export default withApi
