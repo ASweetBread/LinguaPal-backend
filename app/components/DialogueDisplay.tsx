@@ -1,8 +1,10 @@
 'use client'
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import { useAppStore } from '../store'
 import { recognizeSpeech as recognizeSpeechApi } from '../lib/apiCalls';
 import useRecord from '../lib/hooks/useRecord';
+import PracticeFlow from './PracticeFlow'
+import { calculateSimilarity } from '../lib/utils/stringCompare'
 
 export default function DialogueDisplay() {
   const { 
@@ -29,10 +31,19 @@ export default function DialogueDisplay() {
       }
     }
   });
+  const [showPractice, setShowPractice] = useState(false)
   
   if (!dialogue || dialogue.length === 0) {
     // 当没有对话时，不渲染该组件（返回 null）
     return null
+  }
+
+  if (showPractice) {
+    return (
+      <div className="w-full max-w-3xl mx-auto">
+        <PracticeFlow onFinish={() => setShowPractice(false)} />
+      </div>
+    )
   }
 
   // 解析对话内容，分离英文和中文部分
@@ -44,39 +55,6 @@ export default function DialogueDisplay() {
     }
   }
   
-  // Levenshtein距离算法，用于计算字符串相似度
-  const levenshteinDistance = (str1: string, str2: string): number => {
-    const m = str1.length
-    const n = str2.length
-    
-    // 创建DP表
-    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0))
-    
-    // 初始化第一行和第一列
-    for (let i = 0; i <= m; i++) dp[i][0] = i
-    for (let j = 0; j <= n; j++) dp[0][j] = j
-    
-    // 填充DP表
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        const cost = str1[i - 1].toLowerCase() === str2[j - 1].toLowerCase() ? 0 : 1
-        dp[i][j] = Math.min(
-          dp[i - 1][j] + 1, // 删除
-          dp[i][j - 1] + 1, // 插入
-          dp[i - 1][j - 1] + cost // 替换
-        )
-      }
-    }
-    
-    return dp[m][n]
-  }
-  
-  // 计算字符串相似度百分比
-  const calculateSimilarity = (str1: string, str2: string): number => {
-    const distance = levenshteinDistance(str1, str2)
-    const maxLength = Math.max(str1.length, str2.length)
-    return maxLength > 0 ? (1 - distance / maxLength) * 100 : 100
-  }
   
   // 开始录音
   const startRecording = async (sentenceIndex: number) => {
@@ -152,7 +130,15 @@ export default function DialogueDisplay() {
 
   return (
     <div className="w-full max-w-2xl mx-auto">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">生成的对话</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold text-gray-900">生成的对话</h2>
+        <div>
+          <button
+            onClick={() => setShowPractice(true)}
+            className="px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+          >开始对话练习</button>
+        </div>
+      </div>
       <div className="space-y-6">
         {dialogue.map((item, index) => {
           const { english, chinese } = parseDialogueText(item.text)
