@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { apiRequest } from '../apiWrapper'
+import { SYSTEM_PROMPT } from '@/app/lib/prompts/generateDialoguePrompt'
 
 // 定义请求参数接口
 interface DialogueRequest {
+  scene: string
   prompt: string
   language: string
   difficulty?: 'beginner' | 'intermediate' | 'advanced'
@@ -31,9 +33,9 @@ interface ZhipuAIResponse {
 export const POST = async (request: Request) => {
   try {
     const body = await request.json()
-    const { prompt, language, difficulty = 'beginner' } = body as DialogueRequest
-    
-    if (!prompt || !language) {
+    const { scene } = body as DialogueRequest
+
+    if (!scene) {
       return NextResponse.json(
         { error: '提示词和语言类型不能为空' },
         { status: 400 }
@@ -44,11 +46,11 @@ export const POST = async (request: Request) => {
     const messages = [
       {
         role: 'system',
-        content: `你是一个语言学习助手。请根据用户提供的提示，生成一段${difficulty}级别的${language}对话。`
+        content: SYSTEM_PROMPT
       },
       {
         role: 'user',
-        content: `请生成一段关于"${prompt}"的${difficulty}级别的${language}对话。`
+        content: scene
       }
     ]
     
@@ -70,7 +72,14 @@ export const POST = async (request: Request) => {
         body: JSON.stringify({
           model: 'glm-4.6',
           messages: messages,
-          temperature: 0.7
+          temperature: 0.7,
+          "thinking": {
+            "type": "disabled"
+          },
+          "response_format": {
+            "type": "json_object"
+          },
+          "stream": false,
         })
       },
       'ZhipuAI-Chat' // API名称标识
@@ -85,7 +94,7 @@ export const POST = async (request: Request) => {
     
     // 构建响应对象
     const responseData: DialogueResponse = {
-      dialogue: generatedContent,
+      dialogue: JSON.parse(generatedContent),
       // 这里可以根据需要添加翻译和词汇表信息
     }
     

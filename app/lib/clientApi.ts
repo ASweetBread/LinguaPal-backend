@@ -52,22 +52,16 @@ export async function clientFetch(input: RequestInfo, init?: ClientFetchOptions)
     const duration = Date.now() - start
 
     // clone and read text for preview
-    let text = ''
+    let text
     try {
       const clone = res.clone()
-      text = await clone.text()
+      text = await clone.json()
     } catch (e) {
       text = '[unreadable response body]'
     }
 
     // try parse JSON for nicer preview
     let parsedPreview = text
-    try {
-      const parsed = JSON.parse(text)
-      parsedPreview = JSON.stringify(parsed)
-    } catch {
-      // keep text as-is
-    }
 
     parsedPreview = truncate(parsedPreview)
 
@@ -85,11 +79,7 @@ export async function clientFetch(input: RequestInfo, init?: ClientFetchOptions)
     }
 
     // Try returning parsed JSON, otherwise return raw text
-    try {
-      return JSON.parse(text)
-    } catch {
-      return text
-    }
+    return text
   } catch (error) {
     const duration = Date.now() - start
     console.error(`[${new Date().toISOString()}] [${name}] !!! ERROR ${method} ${url} (${duration}ms)`, error)
