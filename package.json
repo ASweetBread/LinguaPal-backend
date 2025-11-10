@@ -15,6 +15,7 @@
     "@types/node": "^20.12.7",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "js-audio-recorder": "^1.0.7",
     "next": "^14.2.3",
     "node-wav": "^0.0.2",
     "react": "^18.3.1",

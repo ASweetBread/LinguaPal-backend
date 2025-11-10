@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { apiRequest } from '../apiWrapper'
-import { File } from 'node:buffer'
 import fs from 'fs'
 import path from 'path'
 
@@ -88,7 +87,7 @@ export const POST = async (request: Request) => {
       //   type: 'audio/wav' 
       // });
       formData.append('file', audioBlob as Blob);
-      
+      console.log(formData, 'formData')
       // 使用apiRequest替换fetch，不设置Content-Type让浏览器自动处理
       const data = await apiRequest<ZhipuAIResponse>(
         'https://open.bigmodel.cn/api/paas/v4/audio/transcriptions',

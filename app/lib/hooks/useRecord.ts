@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import Recorder from 'js-audio-recorder';
 
 // 音频设备接口
 export interface AudioDevice {
@@ -24,34 +25,28 @@ export interface UseRecordReturn {
 }
 
 /**
- * 录音功能的自定义Hook
+ * 录音功能的自定义Hook - 使用js-audio-recorder库
  */
 export function useRecord(options: UseRecordOptions = {}): UseRecordReturn {
   const [isRecording, setIsRecording] = useState(false);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [audioUrl, setAudioUrl] = useState<string>('');
   const [currentAudioBlob, setCurrentAudioBlob] = useState<Blob | null>(null);
   const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const audioElementRef = useRef<HTMLAudioElement | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]); // 使用ref避免状态更新延迟
-  const recorderRef = useRef<MediaRecorder | null>(null); // 使用ref来持有recorder引用
+  // 使用js-audio-recorder的recorder实例
+  const recorderRef = useRef<Recorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     // 组件卸载时清理
     return () => {
-      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      if (recorderRef.current) {
         recorderRef.current.stop();
+        recorderRef.current.destroy();
       }
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      }
-      if (audioElementRef.current) {
-        audioElementRef.current.srcObject = null;
-        audioElementRef.current = null;
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
       }
       if (audioUrl) {
         URL.revokeObjectURL(audioUrl);
@@ -63,11 +58,10 @@ export function useRecord(options: UseRecordOptions = {}): UseRecordReturn {
   const loadAudioDevices = async (): Promise<void> => {
     try {
       console.log('开始获取音频设备列表...');
+      
       // 首先请求媒体权限（某些浏览器需要权限才能列出设备）
-      if (!mediaStreamRef.current) {
-        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        tempStream.getTracks().forEach(track => track.stop());
-      }
+      const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      tempStream.getTracks().forEach(track => track.stop());
       
       // 获取所有媒体设备
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -116,15 +110,13 @@ export function useRecord(options: UseRecordOptions = {}): UseRecordReturn {
     try {
       // 清理之前可能存在的资源
       if (recorderRef.current) {
-        if (recorderRef.current.state !== 'inactive') {
-          recorderRef.current.stop();
-        }
-        recorderRef.current = null;
+        recorderRef.current.stop();
+        recorderRef.current.destroy();
       }
       
-      console.log('开始获取媒体流...');
+      console.log('开始初始化js-audio-recorder...');
       
-      // 根据是否选择了设备ID来构建约束条件
+      // 设置约束条件，包括设备选择和音频处理选项
       const constraints: MediaStreamConstraints = {
         audio: selectedDeviceId ? 
           { 
@@ -139,195 +131,80 @@ export function useRecord(options: UseRecordOptions = {}): UseRecordReturn {
       };
       
       console.log('使用的设备ID:', selectedDeviceId || '默认设备');
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('媒体流获取成功，流ID:', stream.id);
-      mediaStreamRef.current = stream;
       
-      // 检查流的音轨状态
-      const audioTracks = stream.getAudioTracks();
-      console.log('音轨数量:', audioTracks.length);
-      audioTracks.forEach((track, index) => {
-        console.log(`音轨${index}状态:`, track.enabled ? '启用' : '禁用', '就绪状态:', track.readyState);
-        console.log(`音轨${index}标签:`, track.label);
-        // 确保音轨是启用的
-        if (!track.enabled) {
-          track.enabled = true;
-          console.log(`已启用音轨${index}`);
-        }
+      // 创建Recorder实例并配置
+      const recorder = new Recorder({
+        sampleBits: 16, // 采样位数
+        sampleRate: 16000, // 采样率，适合语音识别
+        numChannels: 1, 
       });
       
-      // 创建音频元素并使用流，防止流被过早停止
-      // audioElementRef.current = new Audio();
-      // audioElementRef.current.srcObject = stream;
-      // audioElementRef.current.muted = true; // 静音以避免反馈
+      recorderRef.current = recorder;
       
-      // 尝试播放音频元素，但处理可能的自动播放限制
-      // try {
-      //   // await audioElementRef.current.play();
-      //   console.log('音频元素播放成功');
-      // } catch (playError) {
-      //   console.warn('音频元素自动播放失败（浏览器限制）:', playError);
-      // }
-      
-      // 创建MediaRecorder，尝试使用合适的MIME类型
-      // 获取所有支持的MIME类型并选择第一个
-      const supportedTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/wav', 'audio/ogg;codecs=opus'];
-      let mimeType = supportedTypes.find(type => MediaRecorder.isTypeSupported(type)) || 'audio/webm';
-      
-      console.log('可用的MediaRecorder MIME类型检测:');
-      supportedTypes.forEach(type => {
-        console.log(`${type}: ${MediaRecorder.isTypeSupported(type) ? '支持' : '不支持'}`);
+      // 开始录音
+      await recorder.start().then(() => {
+        console.log('js-audio-recorder录音开始成功');
+        setIsRecording(true);
+      }).catch((error) => {
+        console.error('js-audio-recorder启动失败:', error);
+        throw error;
       });
-      console.log('选择的MIME类型:', mimeType);
       
-      // 创建MediaRecorder实例
-      const recorder = new MediaRecorder(stream, { mimeType });
-      recorderRef.current = recorder; // 保存到ref中
-      audioChunksRef.current = []; // 重置音频块
-      
-      // 添加错误处理
-      recorder.onerror = (event) => {
-        console.error('MediaRecorder错误:', event.error?.name, event.error?.message, '状态:', recorder.state);
-        // 提供更详细的错误信息
-        if (event.error) {
-          console.error('错误详情:', event.error);
-        }
-      };
-      
-      // 添加状态变化监听
-      recorder.onstart = () => {
-        console.log('录音开始，recorder状态:', recorder.state);
-        // 只有当状态确实是'recording'时才设置isRecording为true
-        if (recorder.state === 'recording') {
-          setIsRecording(true);
-        }
-      };
-      
-      recorder.onpause = () => {
-        console.log('录音暂停，recorder状态:', recorder.state);
-      };
-      
-      recorder.onresume = () => {
-        console.log('录音恢复，recorder状态:', recorder.state);
-      };
-      
-      recorder.ondataavailable = (event) => {
-        console.log('ondataavailable触发，数据大小:', event.data.size, '类型:', event.data.type);
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-          // 也更新状态，用于UI显示
-          setAudioChunks(prev => [...prev, event.data]);
-        } else {
-          console.warn('收到空数据块');
-        }
-      };
-      
-      recorder.onstop = async () => {
-        console.log('onstop触发，recorder状态:', recorder.state, '收集的音频块数量:', audioChunksRef.current.length);
-        
-        setIsRecording(false); // 确保UI状态正确
-        
-        // 使用ref中的数据而不是state，避免异步问题
-        if (audioChunksRef.current.length > 0) {
-          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-          console.log('创建的Blob大小:', audioBlob.size, '类型:', audioBlob.type);
-          
-          const url = URL.createObjectURL(audioBlob);
-          setAudioUrl(url);
-          setCurrentAudioBlob(audioBlob);
-          
-          // 转换为Base64并调用回调
-          try {
-            const base64Audio = await blobToBase64(audioBlob);
-            console.log('转换为Base64成功，长度:', base64Audio.length);
-            if (options.onRecordingComplete) {
-              options.onRecordingComplete(base64Audio);
-            }
-          } catch (error) {
-            console.error('转换音频失败:', error);
-          }
-        } else {
-          console.error('没有收集到音频数据');
-          setCurrentAudioBlob(null);
-        }
-      };
-      
-      // 设置状态
-      setMediaRecorder(recorder);
-      setAudioChunks([]);
+      // 重置音频相关状态
       setCurrentAudioBlob(null);
       
-      // 开始录音，使用不同的timeslice值
-      try {
-        // 尝试不带timeslice参数，让MediaRecorder使用默认行为
-        recorder.start(1000);
-        console.log('recorder.start()调用完成');
-        
-        // 验证recorder状态
-        setTimeout(() => {
-          console.log('recorder启动后状态:', recorder.state);
-          // 如果状态不是recording，可能是失败了
-          if (recorder.state !== 'recording') {
-            console.error('recorder未成功启动，当前状态:', recorder.state);
-          }
-        }, 100);
-      } catch (startError) {
-        console.error('调用recorder.start()失败:', startError);
-        throw new Error('启动录音失败');
-      }
-      
-      // 不在这里设置isRecording，而是在onstart回调中设置
       console.log('录音初始化完成');
     } catch (error) {
       console.error('录音失败:', error);
-      // 清理资源
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
-      }
-      if (audioElementRef.current) {
-        audioElementRef.current.srcObject = null;
-        audioElementRef.current = null;
-      }
       setIsRecording(false);
       throw new Error('无法访问麦克风，请确保已授予权限');
     }
   };
   
   // 停止录音
-  const stopRecording = () => {
-    console.log('stopRecording被调用，当前recorder状态:', recorderRef.current?.state);
-    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+  const stopRecording = async () => {
+    console.log('stopRecording被调用');
+    
+    if (recorderRef.current) {
       try {
+        // 停止录音
         recorderRef.current.stop();
-        console.log('recorder.stop()已调用');
-      } catch (stopError) {
-        console.error('调用recorder.stop()失败:', stopError);
-      }
-      
-      // 延迟清理资源，确保onstop事件完成
-      setTimeout(() => {
-        // 清空音频元素
-        if (audioElementRef.current) {
-          audioElementRef.current.srcObject = null;
-          audioElementRef.current = null;
-          console.log('音频元素已清理');
+        console.log('录音已停止');
+        
+        // 获取WAV格式的Blob数据
+        const audioBlob = recorderRef.current.getWAVBlob();
+        console.log('创建的Blob大小:', audioBlob.size, '类型:', audioBlob.type);
+        
+        // 创建音频URL
+        const url = URL.createObjectURL(audioBlob);
+        setAudioUrl(url);
+        setCurrentAudioBlob(audioBlob);
+        
+        // 转换为Base64并调用回调
+        try {
+          const base64Audio = await blobToBase64(audioBlob);
+          console.log('转换为Base64成功，长度:', base64Audio.length);
+          if (options.onRecordingComplete) {
+            options.onRecordingComplete(base64Audio);
+          }
+        } catch (error) {
+          console.error('转换音频失败:', error);
         }
         
-        // 停止所有音轨
-        if (mediaStreamRef.current) {
-          mediaStreamRef.current.getTracks().forEach(track => {
-            track.stop();
-            console.log('音轨已停止');
-          });
-          mediaStreamRef.current = null;
-          console.log('媒体流已清理');
+      } catch (stopError) {
+        console.error('停止录音失败:', stopError);
+      }
+      
+      // 清理资源
+      setTimeout(() => {
+        if (recorderRef.current) {
+          // 注意：不要在这里destroy，因为destroy会清除所有数据
+          // 我们需要在组件卸载时才destroy
         }
       }, 500);
-    } else {
-      console.log('recorder状态为inactive，无需停止');
-      setIsRecording(false); // 确保UI状态正确
-    }
+    } 
+    
+    setIsRecording(false); // 确保UI状态正确
   };
 
   return {
@@ -335,7 +212,7 @@ export function useRecord(options: UseRecordOptions = {}): UseRecordReturn {
     audioUrl,
     startRecording,
     stopRecording,
-    mediaRecorder,
+    mediaRecorder: null, // js-audio-recorder不直接暴露MediaRecorder实例
     currentAudioBlob,
     audioDevices,
     selectedDeviceId,
