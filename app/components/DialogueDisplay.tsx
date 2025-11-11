@@ -10,10 +10,7 @@ export default function DialogueDisplay() {
   const { 
     dialogue, 
     currentSentenceIndex, 
-    setCurrentSentenceIndex,
-    sentencePracticeStates,
-    updateSentencePracticeState,
-    resetPracticeStates
+    setCurrentSentenceIndex
   } = useAppStore()
   
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -32,6 +29,18 @@ export default function DialogueDisplay() {
     }
   });
   const [showPractice, setShowPractice] = useState(false)
+  // 本组件本地维护句子练习状态，避免与其他组件耦合
+  const [localPracticeStates, setLocalPracticeStates] = useState<Record<number, { passed: boolean | null; recognizedText: string }>>({})
+
+  // 初始化本地练习状态
+  useEffect(() => {
+    if (!dialogue) return
+    const map: Record<number, { passed: boolean | null; recognizedText: string }> = {}
+    dialogue.forEach((_, idx) => {
+      map[idx] = { passed: null, recognizedText: '' }
+    })
+    setLocalPracticeStates(map)
+  }, [dialogue])
   
   if (!dialogue || dialogue.length === 0) {
     // 当没有对话时，不渲染该组件（返回 null）
@@ -93,15 +102,14 @@ export default function DialogueDisplay() {
       const sentence = dialogue[sentenceIndex]
       const { english } = parseDialogueText(sentence.text)
       
-      // 在客户端计算相似度
+      // 在客户端计算相似度并更新本地状态
       const similarity = calculateSimilarity(recognizedText, english)
       const passed = similarity >= 70 // 70% 相似度视为通过
-      
-      // 更新状态
-      updateSentencePracticeState(sentenceIndex, {
-        recognizedText,
-        passed
-      })
+
+      setLocalPracticeStates(prev => ({
+        ...prev,
+        [sentenceIndex]: { passed, recognizedText }
+      }))
       
     } catch (error) {
       console.error('相似度检查失败:', error)
@@ -115,17 +123,18 @@ export default function DialogueDisplay() {
     speechSynthesis.speak(utterance)
   }
   
-  // 获取句子的练习状态
+  // 获取句子的练习状态（本地）
   const getSentenceState = (index: number) => {
-    return sentencePracticeStates.find(state => state.index === index) || {
-      passed: null,
-      recognizedText: ''
-    }
+    return localPracticeStates[index] || { passed: null, recognizedText: '' }
   }
-  
-  // 重置所有练习状态
+
+  // 重置所有练习状态（本地）
   const handleResetPractice = () => {
-    resetPracticeStates()
+    const map: Record<number, { passed: boolean | null; recognizedText: string }> = {}
+    dialogue.forEach((_, idx) => {
+      map[idx] = { passed: null, recognizedText: '' }
+    })
+    setLocalPracticeStates(map)
   }
 
   return (
@@ -212,8 +221,8 @@ export default function DialogueDisplay() {
           )
         })}
         
-        {/* 重置练习按钮 */}
-        {dialogue.length > 0 && sentencePracticeStates.some(state => state.passed !== null) && (
+  {/* 重置练习按钮 */}
+  {dialogue.length > 0 && Object.values(localPracticeStates).some(state => state.passed !== null) && (
           <div className="mt-6 text-center">
             <button
               onClick={handleResetPractice}

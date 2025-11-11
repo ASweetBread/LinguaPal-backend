@@ -21,7 +21,19 @@ const parseDialogueText = (text: string) => {
 }
 
 export default function PracticeFlow({ onFinish }: { onFinish?: () => void }) {
-  const { dialogue, updateSentencePracticeState } = useAppStore()
+  const { dialogue } = useAppStore()
+
+  // 本组件本地维护练习状态，避免使用全局store
+  const [localPracticeStates, setLocalPracticeStates] = useState<Record<number, { passed: boolean | null; recognizedText: string }>>({})
+
+  useEffect(() => {
+    if (!dialogue) return
+    const map: Record<number, { passed: boolean | null; recognizedText: string }> = {}
+    dialogue.forEach((_, idx) => {
+      map[idx] = { passed: null, recognizedText: '' }
+    })
+    setLocalPracticeStates(map)
+  }, [dialogue])
 
   const [practiceRole, setPracticeRole] = useState<'A' | 'B'>('A')
   const [tasks, setTasks] = useState<Task[]>([])
@@ -82,11 +94,11 @@ export default function PracticeFlow({ onFinish }: { onFinish?: () => void }) {
     setLastResultCorrect(correct)
     setShowResult(true)
 
-    // 更新store里对应句子的练习状态（以目标句为索引）
-    updateSentencePracticeState(currentTask.targetIndex, {
-      passed: correct,
-      recognizedText: input
-    })
+    // 更新本地练习状态
+    setLocalPracticeStates(prev => ({
+      ...prev,
+      [currentTask.targetIndex]: { passed: correct, recognizedText: input }
+    }))
 
     if (!correct) {
       // 加入下一轮复习队列，避免重复加入
@@ -153,6 +165,7 @@ export default function PracticeFlow({ onFinish }: { onFinish?: () => void }) {
 
   const promptText = parseDialogueText(dialogue[currentTask.promptIndex].text).english
   const targetText = parseDialogueText(dialogue[currentTask.targetIndex].text).english
+  const targetChinese = parseDialogueText(dialogue[currentTask.targetIndex].text).chinese
 
   return (
     <div className="w-full max-w-2xl mx-auto">
@@ -180,7 +193,12 @@ export default function PracticeFlow({ onFinish }: { onFinish?: () => void }) {
           onChange={(e) => setUserInput(e.target.value)}
           rows={3}
           className="w-full border rounded p-2 mb-3"
+          disabled={showResult}
         />
+
+        {/* 参考中文提示 */}
+        <div className="mt-2 text-sm text-gray-600">参考中文：</div>
+        <div className="p-2 bg-gray-50 rounded border mb-3">{targetChinese}</div>
 
         {!showResult && (
           <div className="flex gap-2">
@@ -190,9 +208,9 @@ export default function PracticeFlow({ onFinish }: { onFinish?: () => void }) {
             >提交</button>
             <button
               onClick={() => {
-                setUserInput(targetText)
+                // 仅显示参考答案，不自动填充用户输入
                 setShowResult(true)
-                setLastResultCorrect(true)
+                setLastResultCorrect(null)
                 setLastDiff(markDifferencesByWord(targetText, userInput))
               }}
               className="px-3 py-1 bg-gray-200 rounded"
@@ -217,8 +235,15 @@ export default function PracticeFlow({ onFinish }: { onFinish?: () => void }) {
               </div>
             </div>
 
-            <div className="mt-3 text-sm text-gray-600">你的输入：</div>
-            <div className="p-2 bg-gray-50 rounded border mt-1">{userInput || <em className="text-gray-400">（空）</em>}</div>
+            {!showResult ? (
+              <>
+                <div className="mt-3 text-sm text-gray-600">你的输入：</div>
+                <div className="p-2 bg-gray-50 rounded border mt-1">{userInput || <em className="text-gray-400">（空）</em>}</div>
+              </>
+            ) : (
+              // 当显示参考句时，隐藏用户输入区域（按需求）
+              null
+            )}
 
             <div className="mt-3 flex gap-2">
               <button onClick={onNext} className="px-3 py-1 bg-blue-600 text-white rounded">下一句</button>
